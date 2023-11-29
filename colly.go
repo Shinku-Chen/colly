@@ -630,7 +630,10 @@ func (c *Collector) scrape(u, method string, depth int, requestData io.ReadSeeke
 		hdr.Set("User-Agent", c.UserAgent)
 	}
 	if requestData != nil {
-		_, _ = requestData.Seek(0, io.SeekStart)
+		_, err := requestData.Seek(0, io.SeekStart)
+		if err != nil {
+			return err
+		}
 	}
 
 	req, err := http.NewRequest(method, parsedURL.String(), requestData)
