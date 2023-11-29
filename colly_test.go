@@ -1703,3 +1703,26 @@ func requireSessionCookieAuthPage(handler http.Handler) http.Handler {
 		handler.ServeHTTP(w, r)
 	})
 }
+
+func TestCollectorPostRetry(t *testing.T) {
+	ts := newTestServer()
+	defer ts.Close()
+
+	postValue := "hello"
+	c := NewCollector()
+
+	c.OnResponse(func(r *Response) {
+		if r.Ctx.Get("notFirst") == "" {
+			r.Ctx.Put("notFirst", "first")
+			_ = r.Request.Retry()
+			return
+		}
+		if postValue != string(r.Body) {
+			t.Error("Failed to send data with POST")
+		}
+	})
+
+	c.Post(ts.URL+"/login", map[string]string{
+		"name": postValue,
+	})
+}
