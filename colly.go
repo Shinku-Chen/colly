@@ -567,7 +567,7 @@ func (c *Collector) PostMultipart(URL string, requestData map[string][]byte) err
 //   - "DELETE"
 //   - "PATCH"
 //   - "OPTIONS"
-func (c *Collector) Request(method, URL string, requestData io.Reader, ctx *Context, hdr http.Header) error {
+func (c *Collector) Request(method, URL string, requestData io.ReadSeeker, ctx *Context, hdr http.Header) error {
 	return c.scrape(URL, method, 1, requestData, ctx, hdr, true)
 }
 
@@ -607,7 +607,7 @@ func (c *Collector) UnmarshalRequest(r []byte) (*Request, error) {
 	}, nil
 }
 
-func (c *Collector) scrape(u, method string, depth int, requestData io.Reader, ctx *Context, hdr http.Header, checkRevisit bool) error {
+func (c *Collector) scrape(u, method string, depth int, requestData io.ReadSeeker, ctx *Context, hdr http.Header, checkRevisit bool) error {
 	parsedWhatwgURL, err := urlParser.Parse(u)
 	if err != nil {
 		return err
@@ -629,6 +629,7 @@ func (c *Collector) scrape(u, method string, depth int, requestData io.Reader, c
 	if _, ok := hdr["User-Agent"]; !ok {
 		hdr.Set("User-Agent", c.UserAgent)
 	}
+	_, _ = requestData.Seek(0, io.SeekStart)
 	req, err := http.NewRequest(method, parsedURL.String(), requestData)
 	if err != nil {
 		return err
@@ -654,7 +655,7 @@ func (c *Collector) scrape(u, method string, depth int, requestData io.Reader, c
 	return c.fetch(u, method, depth, requestData, ctx, hdr, req)
 }
 
-func (c *Collector) fetch(u, method string, depth int, requestData io.Reader, ctx *Context, hdr http.Header, req *http.Request) error {
+func (c *Collector) fetch(u, method string, depth int, requestData io.ReadSeeker, ctx *Context, hdr http.Header, req *http.Request) error {
 	defer c.wg.Done()
 	if ctx == nil {
 		ctx = NewContext()
@@ -1417,7 +1418,7 @@ func SanitizeFileName(fileName string) string {
 	), "-", "_", -1)
 }
 
-func createFormReader(data map[string]string) io.Reader {
+func createFormReader(data map[string]string) io.ReadSeeker {
 	form := url.Values{}
 	for k, v := range data {
 		form.Add(k, v)
@@ -1425,7 +1426,7 @@ func createFormReader(data map[string]string) io.Reader {
 	return strings.NewReader(form.Encode())
 }
 
-func createMultipartReader(boundary string, data map[string][]byte) io.Reader {
+func createMultipartReader(boundary string, data map[string][]byte) io.ReadSeeker {
 	dashBoundary := "--" + boundary
 
 	body := []byte{}
@@ -1440,7 +1441,8 @@ func createMultipartReader(boundary string, data map[string][]byte) io.Reader {
 		buffer.WriteString("\n")
 	}
 	buffer.WriteString(dashBoundary + "--\n\n")
-	return buffer
+	return bytes.NewReader(buffer.Bytes())
+
 }
 
 // randomBoundary was borrowed from

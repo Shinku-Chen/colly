@@ -39,7 +39,7 @@ type Request struct {
 	// Method is the HTTP method of the request
 	Method string
 	// Body is the request body which is used on POST/PUT requests
-	Body io.Reader
+	Body io.ReadSeeker
 	// ResponseCharacterencoding is the character encoding of the response body.
 	// Leave it blank to allow automatic character encoding of the response body.
 	// It is empty by default and it can be set in OnRequest callback.
@@ -65,7 +65,7 @@ type serializableRequest struct {
 }
 
 // New creates a new request with the context of the original request
-func (r *Request) New(method, URL string, body io.Reader) (*Request, error) {
+func (r *Request) New(method, URL string, body io.ReadSeeker) (*Request, error) {
 	u, err := urlParser.Parse(URL)
 	if err != nil {
 		return nil, err
