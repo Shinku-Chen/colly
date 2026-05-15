@@ -28,6 +28,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -2074,5 +2075,76 @@ func TestIssue745GzipURLWith404Response(t *testing.T) {
 	// with status 404, not a gzip decompression error
 	if responseStatusCode != 404 {
 		t.Errorf("Expected status code 404, got %d", responseStatusCode)
+	}
+}
+
+// TestSharedLimitRule_AInitThenBInit_ANotStuck verifies that sharing a single
+// *LimitRule across multiple Collectors does not deadlock the in-flight
+// requests of an earlier Collector when a later Collector calls Limit().
+//
+// Scenario:
+//  1. Collector A calls Limit(rule), then issues several requests that occupy
+//     slots in rule.waitChan.
+//  2. Collector B calls Limit(rule), which invokes rule.Init() again.
+//  3. A's pending handlers are released; A.Wait() must return.
+//
+// Without the `if r.waitChan == nil` guard in (*LimitRule).Init(), step 2
+// rebuilds rule.waitChan with a brand-new empty channel. The fetch goroutines
+// that A had already in flight then receive from the new (empty) channel in
+// their `defer <-r.waitChan`, blocking forever — A.Wait() deadlocks.
+func TestSharedLimitRule_AInitThenBInit_ANotStuck(t *testing.T) {
+	release := make(chan struct{})
+	var inHandler int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt64(&inHandler, 1)
+		<-release
+	}))
+	defer srv.Close()
+
+	rule := &LimitRule{DomainGlob: "*", Parallelism: 2}
+
+	// A initializes the rule first and dispatches enough requests to occupy
+	// every slot in waitChan.
+	a := NewCollector(Async(true), AllowURLRevisit())
+	if err := a.Limit(rule); err != nil {
+		t.Fatalf("a.Limit: %v", err)
+	}
+	for i := 0; i < 4; i++ {
+		_ = a.Visit(fmt.Sprintf("%s/a/%d", srv.URL, i))
+	}
+
+	// Wait until at least Parallelism requests are actually inside the
+	// handler — at that point they have already pushed into waitChan.
+	deadline := time.Now().Add(3 * time.Second)
+	for atomic.LoadInt64(&inHandler) < 2 {
+		if time.Now().After(deadline) {
+			close(release)
+			t.Fatalf("timed out waiting for A's requests to reach the handler, got=%d",
+				atomic.LoadInt64(&inHandler))
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// B initializes the same rule. Without the guard this rebuilds waitChan
+	// and orphans A's already-acquired slots.
+	b := NewCollector(Async(true), AllowURLRevisit())
+	if err := b.Limit(rule); err != nil {
+		t.Fatalf("b.Limit: %v", err)
+	}
+	_ = b
+
+	// Let A's in-flight handlers return; their defers will run <-r.waitChan.
+	close(release)
+
+	done := make(chan struct{})
+	go func() {
+		a.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		// A returned cleanly — the guard preserved A's waitChan.
+	case <-time.After(10 * time.Second):
+		t.Fatalf("A.Wait() timed out: A is stuck because B.Limit rebuilt rule.waitChan")
 	}
 }
