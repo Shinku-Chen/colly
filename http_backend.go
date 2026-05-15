@@ -65,10 +65,18 @@ type LimitRule struct {
 	compiledGlob   glob.Glob
 }
 
-// Init initializes the private members of LimitRule
+// Init initializes the private members of LimitRule.
+//
+// Init is idempotent: once a LimitRule has been successfully initialized,
+// subsequent calls are no-ops. This makes it safe to share a single
+// *LimitRule across multiple Collectors via Collector.Limit — without this,
+// the second Collector's Limit() call would (a) replace waitChan and
+// orphan the first Collector's already-acquired slots, deadlocking its
+// in-flight requests' defer <-r.waitChan, and (b) race with concurrent
+// Match() reads of compiledRegexp / compiledGlob.
 func (r *LimitRule) Init() error {
-	if r.waitChan == nil {
-		r.waitChan = make(chan bool, max(r.Parallelism, 1))
+	if r.waitChan != nil {
+		return nil
 	}
 	hasPattern := false
 	if r.DomainRegexp != "" {
@@ -90,6 +98,7 @@ func (r *LimitRule) Init() error {
 	if !hasPattern {
 		return ErrNoPattern
 	}
+	r.waitChan = make(chan bool, max(r.Parallelism, 1))
 	return nil
 }
 
