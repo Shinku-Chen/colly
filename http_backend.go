@@ -106,6 +106,20 @@ func (r *LimitRule) Init() error {
 	return nil
 }
 
+// Clone returns a shallow copy of the LimitRule containing only its
+// exported fields. Unexported state (waitChan, compiled patterns, lock)
+// is left zero so the returned rule is independent of the original and
+// must be re-initialized via Init before use.
+func (r *LimitRule) Clone() *LimitRule {
+	return &LimitRule{
+		DomainRegexp: r.DomainRegexp,
+		DomainGlob:   r.DomainGlob,
+		Delay:        r.Delay,
+		RandomDelay:  r.RandomDelay,
+		Parallelism:  r.Parallelism,
+	}
+}
+
 func (h *httpBackend) Init(jar http.CookieJar) {
 	rand.Seed(time.Now().UnixNano())
 	h.Client = &http.Client{

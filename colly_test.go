@@ -2162,3 +2162,63 @@ func TestSharedLimitRuleRace(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// TestLimitRuleClone verifies that Clone copies every exported field, leaves
+// unexported state zeroed, and produces a rule that is independent of the
+// original (mutating one must not affect the other, and Init on the clone
+// must not touch the source's compiled state or waitChan).
+func TestLimitRuleClone(t *testing.T) {
+	orig := &LimitRule{
+		DomainRegexp: `^example\.com$`,
+		DomainGlob:   "*.example.com",
+		Delay:        250 * time.Millisecond,
+		RandomDelay:  500 * time.Millisecond,
+		Parallelism:  4,
+	}
+	if err := orig.Init(); err != nil {
+		t.Fatalf("orig.Init() failed: %v", err)
+	}
+
+	clone := orig.Clone()
+
+	if clone == orig {
+		t.Fatal("Clone returned the same pointer as the source")
+	}
+	if clone.DomainRegexp != orig.DomainRegexp ||
+		clone.DomainGlob != orig.DomainGlob ||
+		clone.Delay != orig.Delay ||
+		clone.RandomDelay != orig.RandomDelay ||
+		clone.Parallelism != orig.Parallelism {
+		t.Fatalf("exported fields not copied: got %+v want %+v", clone, orig)
+	}
+	if clone.waitChan != nil {
+		t.Error("clone.waitChan should be nil, got non-nil")
+	}
+	if clone.compiledRegexp != nil {
+		t.Error("clone.compiledRegexp should be nil, got non-nil")
+	}
+	if clone.compiledGlob != nil {
+		t.Error("clone.compiledGlob should be nil, got non-nil")
+	}
+
+	clone.DomainGlob = "*.other.com"
+	clone.Parallelism = 99
+	if orig.DomainGlob != "*.example.com" || orig.Parallelism != 4 {
+		t.Fatalf("mutating clone affected source: %+v", orig)
+	}
+
+	origWaitChan := orig.waitChan
+	origCompiled := orig.compiledRegexp
+	if err := clone.Init(); err != nil {
+		t.Fatalf("clone.Init() failed: %v", err)
+	}
+	if clone.waitChan == nil {
+		t.Error("clone.waitChan should be initialized after Init")
+	}
+	if clone.waitChan == orig.waitChan {
+		t.Error("clone.Init() should produce its own waitChan, not share the source's")
+	}
+	if orig.waitChan != origWaitChan || orig.compiledRegexp != origCompiled {
+		t.Error("clone.Init() must not mutate the source's unexported state")
+	}
+}
