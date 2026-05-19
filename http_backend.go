@@ -63,7 +63,7 @@ type LimitRule struct {
 	waitChan       chan bool
 	compiledRegexp *regexp.Regexp
 	compiledGlob   glob.Glob
-	initMutex      sync.Mutex
+	initMutex      sync.Locker
 }
 
 // Init initializes the private members of LimitRule.
