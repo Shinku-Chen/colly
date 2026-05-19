@@ -28,6 +28,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -2147,4 +2148,15 @@ func TestSharedLimitRule_AInitThenBInit_ANotStuck(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatalf("A.Wait() timed out: A is stuck because B.Limit rebuilt rule.waitChan")
 	}
+}
+func TestSharedLimitRuleRace(t *testing.T) {
+	rule := &LimitRule{DomainGlob: "*", Parallelism: 2}
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Go(func() {
+			a := NewCollector()
+			a.Limit(rule)
+		})
+	}
+	wg.Wait()
 }
