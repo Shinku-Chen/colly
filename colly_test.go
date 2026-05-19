@@ -2151,12 +2151,14 @@ func TestSharedLimitRule_AInitThenBInit_ANotStuck(t *testing.T) {
 }
 func TestSharedLimitRuleRace(t *testing.T) {
 	rule := &LimitRule{DomainGlob: "*", Parallelism: 2}
-	var wg sync.WaitGroup
+	wg := sync.WaitGroup{}
+	wg.Add(2)
 	for range 2 {
-		wg.Go(func() {
+		go func() {
+			defer wg.Done()
 			a := NewCollector()
-			a.Limit(rule)
-		})
+			_ = a.Limit(rule)
+		}()
 	}
 	wg.Wait()
 }

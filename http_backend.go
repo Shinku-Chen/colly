@@ -63,7 +63,7 @@ type LimitRule struct {
 	waitChan       chan bool
 	compiledRegexp *regexp.Regexp
 	compiledGlob   glob.Glob
-	initMutex      sync.Locker
+	lock           sync.Mutex
 }
 
 // Init initializes the private members of LimitRule.
@@ -76,8 +76,9 @@ type LimitRule struct {
 // in-flight requests' defer <-r.waitChan, and (b) race with concurrent
 // Match() reads of compiledRegexp / compiledGlob.
 func (r *LimitRule) Init() error {
-	r.initMutex.Lock()
-	defer r.initMutex.Unlock()
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
 	if r.waitChan != nil {
 		return nil
 	}
