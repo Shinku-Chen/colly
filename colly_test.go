@@ -2149,6 +2149,20 @@ func TestSharedLimitRule_AInitThenBInit_ANotStuck(t *testing.T) {
 		t.Fatalf("A.Wait() timed out: A is stuck because B.Limit rebuilt rule.waitChan")
 	}
 }
+
+// TestSharedLimitRuleRace exercises (*LimitRule).Init() under concurrent
+// access by having two Collectors call Limit(rule) on the same *LimitRule
+// from separate goroutines. Designed to be run with `go test -race`.
+//
+// Without the lock inside Init(), the two goroutines race on
+// compiledRegexp / compiledGlob / waitChan assignment, which the race
+// detector flags. With the lock, Init() serializes and the idempotency
+// guard ensures only the first caller initializes the rule; the second
+// is a no-op.
+//
+// This test only asserts the absence of a data race — successful return
+// under `-race` is the pass condition. It does not exercise request
+// flow; see TestSharedLimitRule_AInitThenBInit_ANotStuck for that.
 func TestSharedLimitRuleRace(t *testing.T) {
 	rule := &LimitRule{DomainGlob: "*", Parallelism: 2}
 	wg := sync.WaitGroup{}
