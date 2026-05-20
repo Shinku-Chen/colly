@@ -121,7 +121,6 @@ func (r *LimitRule) Clone() *LimitRule {
 }
 
 func (h *httpBackend) Init(jar http.CookieJar) {
-	rand.Seed(time.Now().UnixNano())
 	h.Client = &http.Client{
 		Jar:     jar,
 		Timeout: 10 * time.Second,
